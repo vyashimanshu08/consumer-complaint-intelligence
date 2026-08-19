@@ -1,10 +1,22 @@
-import pandas as pd
 from pathlib import Path
+import pandas as pd
 
-RAW_FILE = Path("data/raw_data/complaints.csv")
-PROCESSED_DIR = Path("data/processed")
 
-PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+# --------------------------------------------------
+# 1. Paths
+# --------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+RAW_FILE = PROJECT_ROOT / "data" / "raw_data" / "complaints.csv"
+OUTPUT_DIR = PROJECT_ROOT / "data" / "processed"
+
+
+# --------------------------------------------------
+# 2. Settings
+# --------------------------------------------------
+
+CHUNK_SIZE = 200_000
 
 SELECTED_COLUMNS = [
     "Date received",
@@ -23,17 +35,28 @@ SELECTED_COLUMNS = [
     "Complaint ID"
 ]
 
-CHUNK_SIZE = 50000
-total_rows = 0
-chunk_number = 0
 
-output_file = PROCESSED_DIR / "complaints_processed_test.csv"
+# --------------------------------------------------
+# 3. Create output folder
+# --------------------------------------------------
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# --------------------------------------------------
+# 4. Process dataset chunk by chunk
+# --------------------------------------------------
+
+chunk_number = 0
+total_rows = 0
 
 for chunk in pd.read_csv(
     RAW_FILE,
     usecols=SELECTED_COLUMNS,
-    chunksize=CHUNK_SIZE
+    chunksize=CHUNK_SIZE,
+    low_memory=False
 ):
+
     chunk_number += 1
 
     # Convert date columns
@@ -47,34 +70,24 @@ for chunk in pd.read_csv(
         errors="coerce"
     )
 
-    # Handle missing categorical values
-    categorical_missing = [
-        "Sub-product",
-        "Sub-issue",
-        "State"
-    ]
-
-    for col in categorical_missing:
-        chunk[col] = chunk[col].fillna("Unknown")
-
-    # Create missingness indicators
-    chunk["has_narrative"] = (
-        chunk["Consumer complaint narrative"].notna().astype(int)
-    )
-
-    chunk["has_public_response"] = (
-        chunk["Company public response"].notna().astype(int)
-    )
-
     # Remove completely duplicated rows
     chunk = chunk.drop_duplicates()
 
-    # Save processed chunk
+    # Create missing-value indicators
+    chunk["has_narrative"] = (
+        chunk["Consumer complaint narrative"].notna()
+    )
+
+    chunk["has_public_response"] = (
+        chunk["Company public response"].notna()
+    )
+
+    # Save each chunk separately
+    output_file = OUTPUT_DIR / f"complaints_part_{chunk_number:04d}.csv"
+
     chunk.to_csv(
         output_file,
-        mode="a",
-        index=False,
-        header=not output_file.exists()
+        index=False
     )
 
     total_rows += len(chunk)
@@ -84,7 +97,7 @@ for chunk in pd.read_csv(
         f"Rows saved: {total_rows:,}"
     )
 
-    if chunk_number == 5:
-        break
 
-print(f"Test complete. Rows saved: {total_rows:,}")
+print("\nProcessing completed successfully!")
+print(f"Total chunks: {chunk_number}")
+print(f"Total rows saved: {total_rows:,}")
